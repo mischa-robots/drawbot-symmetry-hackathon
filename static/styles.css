@@ -1,0 +1,55 @@
+body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+}
+
+#controller {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    gap: 20px;
+}
+
+.joystick {
+    flex-basis: 20%;
+    max-width: 150px;
+    position: relative;
+}
+
+.nipple {
+    width: 100%;
+    height: 100%;
+}
+
+#videoContainer {
+    position: relative;
+    width: 100%;
+    height: 0;
+    padding-bottom: 50%;
+}
+
+iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 71%;
+    border: none;
+}
+
+/* Media query for smaller screens */
+@media (max-width: 768px) {
+    .joystick {
+        flex-basis: 25%;
+        max-width: 100px;
+    }
+
+    #videoContainer {
+        flex-basis: 50%;
+    }
+}

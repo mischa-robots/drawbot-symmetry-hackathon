@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot Control</title>
+    <link rel="stylesheet" href="static/styles.css">
+    <script src="static/nipplejs.min.js"></script>
+</head>
+<body>
+    <h1>Robot Control</h1>
+    <div id="controller">
+        <div id="leftJoystick" class="joystick"></div>
+        <div id="videoContainer">
+            <iframe src="http://192.168.43.199:8889/cam1/" scrolling="no"></iframe>
+        </div>
+        <div id="rightJoystick" class="joystick"></div>
+    </div>
+    <script src="static/control.js"></script>
+</body>
+</html>

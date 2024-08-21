@@ -1,0 +1,28 @@
+version: '3.7'
+
+services:
+  drawbot:
+    build: .
+    container_name: drawbot
+    runtime: nvidia
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    volumes:
+      - /dev:/dev  # Access to devices
+      - .:/app  # Mount the current directory to /app in the container for live code changes
+    devices:
+      - /dev/i2c-1  # I2C device for motor control
+    privileged: true
+    command: ["cargo", "watch", "-x", "run"]
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "none"  # Disable logging
+    restart: unless-stopped

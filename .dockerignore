@@ -1,0 +1,18 @@
+# Ignore the target directory where build artifacts are stored
+target
+
+# Ignore version control directories
+.git
+
+# Ignore IDE/editor directories and files
+.idea
+.vscode
+
+# Ignore OS-specific files
+.DS_Store
+Thumbs.db
+
+# Ignore other files and directories that should not be copied into the Docker image
+*.log
+*.tmp
+*.bak
