@@ -53,3 +53,16 @@ iframe {
         flex-basis: 50%;
     }
 }
+
+#mintButton {
+    padding: 10px 20px;
+    font-size: 16px;
+    margin-top: 20px;
+    cursor: pointer;
+}
+
+#mintStatus {
+    margin-top: 10px;
+    font-size: 14px;
+    color: green;
+}
