@@ -14,8 +14,8 @@ class RobotDataCollector:
         self.robot_ip = robot_ip
         self.ws_url = f"ws://{robot_ip}:{ws_port}/ws"
         self.stream_urls = [
-            f"http://{robot_ip}:{stream_port}/cam0/webrtc",
-            f"http://{robot_ip}:{stream_port}/cam1/webrtc"
+            f"http://{robot_ip}:{stream_port}/cam0",
+            f"http://{robot_ip}:{stream_port}/cam1"
         ]
         self.caps = []
         self.last_numbers = self._get_last_numbers()
