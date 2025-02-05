@@ -3,7 +3,7 @@ import numpy as np
 import sys
 
 class DualCameraViewer:
-    def __init__(self, robot_ip="192.168.158.84", stream_port=8554):
+    def __init__(self, robot_ip="192.168.129.84", stream_port=8554):
         # Using RTSP URLs from mediamtx
         self.stream_urls = [
             f"rtsp://{robot_ip}:{stream_port}/cam0",
@@ -15,7 +15,7 @@ class DualCameraViewer:
     def connect_cameras(self):
         for i, url in enumerate(self.stream_urls):
             print(f"Connecting to camera {i}: {url}")
-            cap = cv2.VideoCapture(url)
+            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 raise Exception(f"Failed to open camera stream: {url}")
             self.caps.append(cap)
@@ -57,8 +57,8 @@ class DualCameraViewer:
                     frames.append(frame)
                 
                 if len(frames) == 2:
-                    combined_frame = self.create_side_by_side_view(frames[0], frames[1])
-                    cv2.imshow(self.window_name, combined_frame)
+                    #combined_frame = self.create_side_by_side_view(frames[0], frames[1])
+                    cv2.imshow(self.window_name, np.hstack((frames[0], frames[1])))
                 
                 # Break loop if 'q' is pressed
                 if cv2.waitKey(1) & 0xFF == ord('q'):
@@ -76,7 +76,7 @@ class DualCameraViewer:
 
 def main():
     # Allow IP and port override from command line
-    robot_ip = sys.argv[1] if len(sys.argv) > 1 else "192.168.158.84"
+    robot_ip = sys.argv[1] if len(sys.argv) > 1 else "192.168.129.84"
     stream_port = int(sys.argv[2]) if len(sys.argv) > 2 else 8554  # Default RTSP port from mediamtx
     
     viewer = DualCameraViewer(robot_ip=robot_ip, stream_port=stream_port)

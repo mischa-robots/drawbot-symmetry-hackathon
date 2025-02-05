@@ -5,6 +5,7 @@ import asyncio
 import websockets
 import json
 import os
+import time
 
 target_dir = "pictures"
 os.makedirs(target_dir, exist_ok=True)
@@ -19,8 +20,7 @@ def get_latest_image_number():
     return numbers
 
 class DualCameraRobotController:
-    def __init__(self, robot_ip="192.168.158.84", stream_port=8554, ws_port=8000):
-        # Using RTSP URLs from mediamtx
+    def __init__(self, robot_ip="192.168.129.84", stream_port=8554, ws_port=8000):
         self.stream_urls = [
             f"rtsp://{robot_ip}:{stream_port}/cam0",
             f"rtsp://{robot_ip}:{stream_port}/cam1"
@@ -30,11 +30,14 @@ class DualCameraRobotController:
         self.window_name = "Robot Cameras"
         self.latest_numbers = get_latest_image_number()
         self.ws = None
+        self.recording = False
+        self.last_capture_time = 0
+        self.capture_interval = 1.0
         
     def connect_cameras(self):
         for i, url in enumerate(self.stream_urls):
             print(f"Connecting to camera {i}: {url}")
-            cap = cv2.VideoCapture(url)
+            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 raise Exception(f"Failed to open camera stream: {url}")
             self.caps.append(cap)
@@ -58,35 +61,29 @@ class DualCameraRobotController:
 
     def handle_keypress(self, key):
         commands = {
-            ord('w'): (1.0, 1.0),  # Forward
-            ord('s'): (-1.0, -1.0),  # Backward
-            ord('a'): (-1.0, 1.0),  # Left turn
-            ord('d'): (1.0, -1.0),  # Right turn
-            ord('q'): (0.0, 0.0)   # Stop
+            ord('w'): (1.0, 1.0),
+            ord('s'): (-1.0, -1.0),
+            ord('a'): (-1.0, 1.0),
+            ord('d'): (1.0, -1.0),
+            ord('q'): (0.0, 0.0)
         }
         if key in commands:
             left, right = commands[key]
             asyncio.run(self.send_command(left, right))
 
-    def create_side_by_side_view(self, frame1, frame2):
-        # both streams have the same size, so resize not required
-        #h1, w1 = frame1.shape[:2]
-        #h2, w2 = frame2.shape[:2]
-        #target_height = min(h1, h2)
-        #frame1 = cv2.resize(frame1, (int(w1 * (target_height / h1)), target_height))
-        #frame2 = cv2.resize(frame2, (int(w2 * (target_height / h2)), target_height))
-        return np.hstack((frame1, frame2))
-
     def take_picture(self, frames):
-        for i, frame in enumerate(frames):
-            self.latest_numbers[i] += 1
-            filename = f"{target_dir}/cam{i}_{self.latest_numbers[i]:04d}.png"
-            cv2.imwrite(filename, frame)
-            print(f"Saved {filename}")
+        current_time = time.time()
+        if not self.recording or (current_time - self.last_capture_time) >= self.capture_interval:
+            for i, frame in enumerate(frames):
+                self.latest_numbers[i] += 1
+                filename = f"{target_dir}/cam{i}_{self.latest_numbers[i]:04d}.png"
+                cv2.imwrite(filename, frame)
+                print(f"Saved {filename}")
+            self.last_capture_time = current_time
 
     def run(self):
         try:
-            print("ROBOT CONTROL\nUse WASD to move, Q to stop, R to record pictures and ESC to quit.\n\n")
+            print("ROBOT CONTROL\nUse WASD to move, Q to stop, R to toggle continuous recording and ESC to quit.\n\n")
             print("Connecting to cameras...")
             self.connect_cameras()
             asyncio.run(self.connect_websocket())
@@ -103,14 +100,22 @@ class DualCameraRobotController:
                     frames.append(frame)
                 
                 if len(frames) == 2:
-                    combined_frame = self.create_side_by_side_view(frames[0], frames[1])
+                    combined_frame = np.hstack((frames[0], frames[1]))
+                    if self.recording:
+                        cv2.putText(combined_frame, "REC", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        self.take_picture(frames)
                     cv2.imshow(self.window_name, combined_frame)
                 
                 key = cv2.waitKey(1) & 0xFF
-                if key == 27:  # ESC key to exit
+                if key == 27:
                     break
                 elif key == ord('r'):
-                    self.take_picture(frames)
+                    self.recording = not self.recording
+                    if self.recording:
+                        print("Started continuous recording")
+                    else:
+                        print("Stopped continuous recording")
+
                 self.handle_keypress(key)
         
         except KeyboardInterrupt:
@@ -126,7 +131,7 @@ class DualCameraRobotController:
                 asyncio.run(self.ws.close())
 
 def main():
-    robot_ip = sys.argv[1] if len(sys.argv) > 1 else "192.168.158.84"
+    robot_ip = sys.argv[1] if len(sys.argv) > 1 else "192.168.129.84"
     stream_port = int(sys.argv[2]) if len(sys.argv) > 2 else 8554
     ws_port = int(sys.argv[3]) if len(sys.argv) > 3 else 8000
     

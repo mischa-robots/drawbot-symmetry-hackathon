@@ -1,101 +1,101 @@
-import asyncio
-import websockets
-import json
 import cv2
-import glob
+import numpy as np
+import sys
 import os
 import time
-from datetime import datetime
-import numpy as np
-import aiohttp
 
-class RobotDataCollector:
-    def __init__(self, robot_ip="192.168.158.84", ws_port=8000, stream_port=8889):
-        self.robot_ip = robot_ip
-        self.ws_url = f"ws://{robot_ip}:{ws_port}/ws"
+target_dir = "pictures"
+os.makedirs(target_dir, exist_ok=True)
+
+def get_latest_image_number():
+    numbers = [0, 0]
+    for i in range(2):
+        files = [f for f in os.listdir(target_dir) if f.startswith(f"cam{i}_") and f.endswith(".png")]
+        if files:
+            latest = max(files, key=lambda x: int(x.split('_')[1].split('.')[0]))
+            numbers[i] = int(latest.split('_')[1].split('.')[0])
+    return numbers
+
+class DualCameraCapture:
+    def __init__(self, robot_ip="192.168.129.84", stream_port=8554):
         self.stream_urls = [
-            f"http://{robot_ip}:{stream_port}/cam0",
-            f"http://{robot_ip}:{stream_port}/cam1"
+            f"rtsp://{robot_ip}:{stream_port}/cam0",
+            f"rtsp://{robot_ip}:{stream_port}/cam1"
         ]
         self.caps = []
-        self.last_numbers = self._get_last_numbers()
+        self.window_name = "Robot Cameras"
+        self.latest_numbers = get_latest_image_number()
+        self.recording = False
+        self.last_capture_time = 0
+        self.capture_interval = 1.0
         
-    def _get_last_numbers(self):
-        numbers = []
-        for cam_id in range(2):
-            files = glob.glob(f"robot-cam{cam_id}-*.png")
-            if not files:
-                numbers.append(0)
-                continue
-            latest = max(files, key=lambda x: int(x.split('-')[-1].split('.')[0]))
-            num = int(latest.split('-')[-1].split('.')[0])
-            numbers.append(num)
-        return numbers
-    
-    async def connect_cameras(self):
-        for url in self.stream_urls:
-            cap = cv2.VideoCapture(url)
+    def connect_cameras(self):
+        for i, url in enumerate(self.stream_urls):
+            print(f"Connecting to camera {i}: {url}")
+            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 raise Exception(f"Failed to open camera stream: {url}")
             self.caps.append(cap)
-    
-    async def drive_pattern(self, ws):
-        patterns = [
-            # Forward
-            {"left": 0.5, "right": 0.5},
-            # Turn right
-            {"left": 0.5, "right": -0.5},
-            # Turn left
-            {"left": -0.5, "right": 0.5},
-            # Stop
-            {"left": 0.0, "right": 0.0}
-        ]
-        
-        for pattern in patterns:
-            await ws.send(json.dumps(pattern))
-            await asyncio.sleep(2)  # Execute each pattern for 2 seconds
-    
-    async def capture_frames(self):
-        while True:
-            for cam_id, cap in enumerate(self.caps):
-                ret, frame = cap.read()
-                if not ret:
-                    continue
-                
-                self.last_numbers[cam_id] += 1
-                filename = f"robot-cam{cam_id}-{self.last_numbers[cam_id]:04d}.png"
+
+    def take_picture(self, frames):
+        current_time = time.time()
+        if not self.recording or (current_time - self.last_capture_time) >= self.capture_interval:
+            for i, frame in enumerate(frames):
+                self.latest_numbers[i] += 1
+                filename = f"{target_dir}/cam{i}_{self.latest_numbers[i]:04d}.png"
                 cv2.imwrite(filename, frame)
-                
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                print(f"[{timestamp}] Captured {filename}")
-            
-            await asyncio.sleep(1)  # Capture every second
-    
-    async def run(self):
+                print(f"Saved {filename}")
+            self.last_capture_time = current_time
+
+    def run(self):
         try:
+            print("CAMERA CAPTURE\nPress R to toggle continuous recording, SPACE for single capture, and ESC to quit.\n")
             print("Connecting to cameras...")
-            await self.connect_cameras()
+            self.connect_cameras()
+            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+            print("Displaying camera feeds.\n")
             
-            print("Starting data collection...")
-            async with websockets.connect(self.ws_url) as ws:
-                # Start frame capture task
-                capture_task = asyncio.create_task(self.capture_frames())
+            while True:
+                frames = []
+                for cap in self.caps:
+                    ret, frame = cap.read()
+                    if not ret:
+                        print("Failed to read frame from camera")
+                        continue
+                    frames.append(frame)
                 
-                # Drive robot in patterns continuously
-                while True:
-                    await self.drive_pattern(ws)
+                if len(frames) == 2:
+                    combined_frame = np.hstack((frames[0], frames[1]))
+                    if self.recording:
+                        cv2.putText(combined_frame, "REC", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
+                        self.take_picture(frames)
+                    cv2.imshow(self.window_name, combined_frame)
+                
+                key = cv2.waitKey(1) & 0xFF
+                if key == 27:  # ESC
+                    break
+                elif key == ord('r'):
+                    self.recording = not self.recording
+                    print("Recording " + ("started" if self.recording else "stopped"))
+                elif key == 32:  # SPACE
+                    self.take_picture(frames)
         
         except KeyboardInterrupt:
-            print("\nStopping data collection...")
+            print("\nStopping camera capture...")
+        except Exception as e:
+            print(f"Error occurred: {str(e)}")
         finally:
             for cap in self.caps:
                 cap.release()
             cv2.destroyAllWindows()
+            print("Capture system closed.")
 
-async def main():
-    collector = RobotDataCollector()
-    await collector.run()
+def main():
+    robot_ip = sys.argv[1] if len(sys.argv) > 1 else "192.168.129.84"
+    stream_port = int(sys.argv[2]) if len(sys.argv) > 2 else 8554
+    
+    controller = DualCameraCapture(robot_ip=robot_ip, stream_port=stream_port)
+    controller.run()
 
 if __name__ == "__main__":
-    asyncio.run(main())
-
+    main()
