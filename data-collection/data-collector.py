@@ -3,6 +3,7 @@ import numpy as np
 import sys
 import os
 import time
+import threading
 
 target_dir = "pictures"
 os.makedirs(target_dir, exist_ok=True)
@@ -28,49 +29,64 @@ class DualCameraCapture:
         self.recording = False
         self.last_capture_time = 0
         self.capture_interval = 1.0
+        self.frames = {0: None, 1: None}
+        self.threads = []
+        self.running = True
         
-    def connect_cameras(self):
+    def capture_frames(self, cam_index, url):
+        cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            print(f"Failed to open camera {cam_index}")
+            return
+        
+        while self.running:
+            ret, frame = cap.read()
+            if ret:
+                self.frames[cam_index] = frame
+            else:
+                print(f"Camera {cam_index}: Failed to grab frame")
+                time.sleep(0.1)  # Prevent excessive CPU usage
+        
+        cap.release()
+    
+    def start_cameras(self):
         for i, url in enumerate(self.stream_urls):
-            print(f"Connecting to camera {i}: {url}")
-            cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
-            if not cap.isOpened():
-                raise Exception(f"Failed to open camera stream: {url}")
-            self.caps.append(cap)
-
-    def take_picture(self, frames):
+            thread = threading.Thread(target=self.capture_frames, args=(i, url), daemon=True)
+            thread.start()
+            self.threads.append(thread)
+    
+    def take_picture(self):
         current_time = time.time()
         if not self.recording or (current_time - self.last_capture_time) >= self.capture_interval:
-            for i, frame in enumerate(frames):
-                self.latest_numbers[i] += 1
-                filename = f"{target_dir}/cam{i}_{self.latest_numbers[i]:04d}.png"
-                cv2.imwrite(filename, frame)
-                print(f"Saved {filename}")
+            for i in range(2):
+                frame = self.frames[i]
+                if frame is not None:
+                    self.latest_numbers[i] += 1
+                    filename = f"{target_dir}/cam{i}_{self.latest_numbers[i]:04d}.png"
+                    cv2.imwrite(filename, frame)
+                    print(f"Saved {filename}")
             self.last_capture_time = current_time
 
     def run(self):
+        print("CAMERA CAPTURE\nPress R to toggle continuous recording, SPACE for single capture, and ESC to quit.\n")
+        print("Starting camera threads...")
+        
+        self.start_cameras()
+        cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
+
         try:
-            print("CAMERA CAPTURE\nPress R to toggle continuous recording, SPACE for single capture, and ESC to quit.\n")
-            print("Connecting to cameras...")
-            self.connect_cameras()
-            cv2.namedWindow(self.window_name, cv2.WINDOW_NORMAL)
-            print("Displaying camera feeds.\n")
-            
             while True:
-                frames = []
-                for cap in self.caps:
-                    ret, frame = cap.read()
-                    if not ret:
-                        print("Failed to read frame from camera")
-                        continue
-                    frames.append(frame)
+                frames = [self.frames[0], self.frames[1]]
                 
-                if len(frames) == 2:
-                    combined_frame = np.hstack((frames[0], frames[1]))
+                if all(frame is not None for frame in frames):
+                    combined_frame = np.hstack(frames)
+                    
                     if self.recording:
                         cv2.putText(combined_frame, "REC", (20, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 0, 255), 2)
-                        self.take_picture(frames)
+                        self.take_picture()
+                    
                     cv2.imshow(self.window_name, combined_frame)
-                
+
                 key = cv2.waitKey(1) & 0xFF
                 if key == 27:  # ESC
                     break
@@ -78,15 +94,14 @@ class DualCameraCapture:
                     self.recording = not self.recording
                     print("Recording " + ("started" if self.recording else "stopped"))
                 elif key == 32:  # SPACE
-                    self.take_picture(frames)
+                    self.take_picture()
         
         except KeyboardInterrupt:
             print("\nStopping camera capture...")
-        except Exception as e:
-            print(f"Error occurred: {str(e)}")
         finally:
-            for cap in self.caps:
-                cap.release()
+            self.running = False
+            for thread in self.threads:
+                thread.join()
             cv2.destroyAllWindows()
             print("Capture system closed.")
 
