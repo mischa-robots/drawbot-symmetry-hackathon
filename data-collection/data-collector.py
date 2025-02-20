@@ -23,7 +23,6 @@ class DualCameraCapture:
             f"rtsp://{robot_ip}:{stream_port}/cam0",
             f"rtsp://{robot_ip}:{stream_port}/cam1"
         ]
-        self.caps = []
         self.window_name = "Robot Cameras"
         self.latest_numbers = get_latest_image_number()
         self.recording = False
@@ -32,9 +31,11 @@ class DualCameraCapture:
         self.frames = {0: None, 1: None}
         self.threads = []
         self.running = True
+        self.ffmpeg_options = "rtsp_transport;tcp|buffer_size;1024"
         
     def capture_frames(self, cam_index, url):
         cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
+        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)  # Reduce buffer size to lower latency
         if not cap.isOpened():
             print(f"Failed to open camera {cam_index}")
             return
